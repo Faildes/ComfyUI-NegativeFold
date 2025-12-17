@@ -32,7 +32,7 @@ def _align_tokens(neg: torch.Tensor, target_t: int) -> torch.Tensor:
         return neg
     if tn > target_t:
         return neg[:, :target_t, :]
-    pad = neg[:, -1:, :].expand(b, target_t - tn, d)
+    pad = neg.new_zeros((b, target_t - tn, d))
     return torch.cat((neg, pad), dim=1)
 
 
@@ -50,41 +50,47 @@ def _fold_tensor(
         neg = _match_batch(neg, pos.shape[0])
         neg = _align_tokens(neg, pos.shape[1])
 
-        # fold: pos' = pos + s*(pos - neg) = (1+s)pos - s*neg
-        x = pos + float(scale) * (pos - neg)
+        pf = pos.float()
+        nf = neg.float()
+
+        # fold: x = pos + s*(pos - neg)
+        xf = pf + float(scale) * (pf - nf)
 
         if rescale > 0.0:
-            pf = pos.float()
-            xf = x.float()
+            std_p = pf.std(dim=(1, 2), keepdim=True)
+            std_x = xf.std(dim=(1, 2), keepdim=True)
+            xf = xf * (std_p / (std_x + eps))
 
-            mu0 = pf.mean(dim=1, keepdim=True)
-            sd0 = pf.std(dim=1, keepdim=True)
+            n_p = pf.norm(dim=2, keepdim=True)
+            n_x = xf.norm(dim=2, keepdim=True)
+            ratio = n_p / (n_x + eps)
+            ratio = ratio.clamp(0.25, 4.0)
+            xf = xf * ratio
 
-            mu = xf.mean(dim=1, keepdim=True)
-            sd = xf.std(dim=1, keepdim=True)
+            xf = pf + float(rescale) * (xf - pf)
 
-            xn = (xf - mu) * (sd0 / (sd + eps)) + mu0
-            x = pos + float(rescale) * (xn.to(dtype=pos.dtype) - pos)
-
-        return x
+        return xf.to(dtype=pos.dtype)
 
     elif pos.ndim == 2:
         neg = _match_batch(neg, pos.shape[0])
-        x = pos + float(scale) * (pos - neg)
+
+        pf = pos.float()
+        nf = neg.float()
+        xf = pf + float(scale) * (pf - nf)
+
         if rescale > 0.0:
-            pf = pos.float()
-            xf = x.float()
+            std_p = pf.std(dim=1, keepdim=True)
+            std_x = xf.std(dim=1, keepdim=True)
+            xf = xf * (std_p / (std_x + eps))
 
-            mu0 = pf.mean(dim=1, keepdim=True)
-            sd0 = pf.std(dim=1, keepdim=True)
+            n_p = pf.norm(dim=1, keepdim=True)
+            n_x = xf.norm(dim=1, keepdim=True)
+            ratio = (n_p / (n_x + eps)).clamp(0.25, 4.0)
+            xf = xf * ratio
 
-            mu = xf.mean(dim=1, keepdim=True)
-            sd = xf.std(dim=1, keepdim=True)
+            xf = pf + float(rescale) * (xf - pf)
 
-            xn = (xf - mu) * (sd0 / (sd + eps)) + mu0
-            x = pos + float(rescale) * (xn.to(dtype=pos.dtype) - pos)
-
-        return x
+        return xf.to(dtype=pos.dtype)
 
     else:
         raise ValueError(f"Unsupported tensor rank: {pos.ndim}")
