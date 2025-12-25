@@ -28,7 +28,7 @@ Documentation = "https://github.com/Faildes/ComfyUI-NegativeFold/wiki"
 "Bug Tracker" = "https://github.com/Faildes/ComfyUI-NegativeFold/issues"
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "crody0901"
 DisplayName = "ComfyUI-NegativeFold"
 Icon = ""
 includes = [] 
